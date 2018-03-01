@@ -1,0 +1,9 @@
+# tools
+required = [
+  "github.com/golang/protobuf/protoc-gen-go",
+]
+
+[prune]
+  # non-go = false
+  go-tests = true
+  unused-packages = true

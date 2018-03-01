@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package api;
+
+message EchoRequest {
+    string data = 1;
+}
+
+message EchoResponse {
+    string data = 1;
+}
+
+service EchoService {
+    rpc Echo (EchoRequest) returns (EchoResponse);
+}
+
+message PowRequest {
+    double x = 1;
+    double y = 2;
+}
+
+message PowResponse {
+    double pow = 1;
+}
+
+service PowService {
+    rpc Pow (PowRequest) returns (PowResponse);
+}
