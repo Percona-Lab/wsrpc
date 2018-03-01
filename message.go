@@ -51,7 +51,7 @@ func readMessage(l *log.Logger, conn *websocket.Conn) (*V1Message, error) {
 	}
 	var arg []byte
 	if arg, err = ioutil.ReadAll(r); err != nil {
-		err = errors.Wrap(err, "failed to read v1 arg")
+		return nil, errors.Wrap(err, "failed to read v1 arg")
 	}
 
 	m := &V1Message{
