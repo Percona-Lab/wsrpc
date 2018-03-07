@@ -3,33 +3,56 @@ package wsrpc
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
 	wsHandshakeTimeout = 5 * time.Second
+	wsWriteTimeout     = 5 * time.Second
 	wsBufSize          = 4096
-	wsWriterCap        = 0
 	wsReadCap          = 0
 )
 
+var (
+	errConnectionClosed = errors.New("wsrpc: WebSocket connection closed")
+)
+
+// Conn.
+//
+// All exported Conn methods are safe for concurrent usage.
+//
+// Connection termination
+//
+// Conn may decide to terminate underlying WebSocket connection when:
+//  * runReader exits due to read errors, timeouts, unmarshalling errors, etc.;
+//  * Write exits due to write errors, timeouts, marshalling errors, etc.;
+//  * TODO runPinger exits due to write errors, timeouts;
+//  * TODO pongs are not received for some time.
+//
+// In that case it just calls stop(error) with appropriate error.
 type Conn struct {
 	ws *websocket.Conn
-	l  *log.Logger
+	l  *logrus.Entry
 
-	toWrite chan *V1Message
-	read    chan *V1Message
+	stopOnce sync.Once
+	stopErr  error
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 
-	rw           sync.RWMutex
-	nextStreamID uint64 // odd for client-created streams, even for server-created
-	readStreams  map[uint64]chan *V1Message
+	writeM sync.Mutex
+
+	read chan *Message
+
+	readRW           sync.RWMutex
+	readNextStreamID uint64 // odd for client-created streams, even for server-created
+	readStreams      map[uint64]chan *Message
 }
 
 // Dial establishes connection by connecting to HTTP server.
@@ -43,7 +66,7 @@ func Dial(addr string) (*Conn, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to connect to %s", addr)
 	}
-	return makeConn(ws, 1), nil
+	return makeConn(ws, 1, "client->server"), nil
 }
 
 // Upgrade establishes connection by upgrading incoming HTTP request from the client.
@@ -57,96 +80,173 @@ func Upgrade(rw http.ResponseWriter, req *http.Request) (*Conn, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to upgrade connection from %s", req.RemoteAddr)
 	}
-	return makeConn(ws, 2), nil
+	return makeConn(ws, 2, "server->client"), nil
 }
 
-func makeConn(ws *websocket.Conn, nextStreamID uint64) *Conn {
-	conn := &Conn{
-		ws:           ws,
-		l:            log.New(os.Stderr, fmt.Sprintf("%s->%s: ", ws.LocalAddr(), ws.RemoteAddr()), log.Flags()),
-		toWrite:      make(chan *V1Message, wsWriterCap),
-		read:         make(chan *V1Message, wsReadCap),
-		nextStreamID: nextStreamID,
-		readStreams:  make(map[uint64]chan *V1Message),
+func makeConn(ws *websocket.Conn, readNextStreamID uint64, logConn string) *Conn {
+	ctx, cancel := context.WithCancel(context.Background())
+	if logConn == "" {
+		logConn = fmt.Sprintf("%s->%s", ws.LocalAddr(), ws.RemoteAddr())
 	}
-	go conn.runWriter()
+	conn := &Conn{
+		ws:               ws,
+		l:                logrus.WithField("conn", logConn),
+		ctx:              ctx,
+		cancel:           cancel,
+		read:             make(chan *Message, wsReadCap),
+		readNextStreamID: readNextStreamID,
+		readStreams:      make(map[uint64]chan *Message),
+	}
+	conn.wg.Add(2)
+	go conn.runPinger()
 	go conn.runReader()
 	return conn
 }
 
+// Close properly closes WebSocket connection.
+func (conn *Conn) Close() error {
+	err := conn.stop(nil)
+	conn.wg.Wait()
+	return err
+}
+
+// close properly closes WebSocket connection with given error (which can be nil).
+func (conn *Conn) stop(err error) error {
+	conn.stopOnce.Do(func() {
+		conn.stopErr = err
+
+		switch e := errors.Cause(err).(type) {
+		case nil:
+			conn.l.Debug("Closing connection")
+		case *websocket.CloseError:
+			conn.l.Warnf("Closing connection: received %q", e)
+		default:
+			conn.l.Errorf("Closing connection: %+v", err)
+		}
+
+		msg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye")
+		if err != nil {
+			// TODO use different codes for different errors
+			msg = websocket.FormatCloseMessage(websocket.CloseGoingAway, err.Error())
+		}
+
+		if e := conn.ws.WriteControl(websocket.CloseMessage, msg, time.Now().Add(wsWriteTimeout)); e != nil {
+			err = e
+		}
+		if e := conn.ws.Close(); e != nil {
+			err = e
+		}
+
+		if conn.stopErr == nil {
+			conn.stopErr = err
+		}
+
+		conn.cancel()
+	})
+
+	return conn.stopErr
+}
+
 // Invoke method on the other side of connection and get response.
 func (conn *Conn) Invoke(path string, arg []byte) ([]byte, error) {
-	resCh := make(chan *V1Message)
+	ch := make(chan *Message)
 
-	conn.rw.Lock()
-	streamID := conn.nextStreamID
-	conn.nextStreamID += 2
-	conn.readStreams[streamID] = resCh
-	conn.rw.Unlock()
+	conn.readRW.Lock()
+	streamID := conn.readNextStreamID
+	conn.readNextStreamID += 2
+	conn.readStreams[streamID] = ch
+	conn.readRW.Unlock()
 
-	req := &V1Message{
-		V1MessageHeader: V1MessageHeader{
-			StreamID: streamID,
-			PathLen:  uint8(len(path)),
-		},
-		Path: path,
-		Arg:  arg,
+	if ch == nil {
+		panic(fmt.Sprintf("channel for stream %d not found", streamID))
 	}
-	if err := conn.Write(context.TODO(), req); err != nil {
+
+	req := &Message{
+		StreamID: streamID,
+		Path:     path,
+		Arg:      arg,
+	}
+	if err := conn.Write(req); err != nil {
 		return nil, err
 	}
 
-	res := <-resCh
+	res := <-ch
+	close(ch) // to make possible bugs more visible
 
-	conn.rw.Lock()
+	conn.readRW.Lock()
 	delete(conn.readStreams, streamID)
-	conn.rw.Unlock()
+	conn.readRW.Unlock()
 
 	return res.Arg, nil
 }
 
-func (conn *Conn) Read(ctx context.Context) (*V1Message, error) {
+func (conn *Conn) Read() (*Message, error) {
 	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case m := <-conn.read:
+	case <-conn.ctx.Done():
+		return nil, conn.ctx.Err()
+	case m, ok := <-conn.read:
+		if !ok {
+			return nil, errConnectionClosed
+		}
 		return m, nil
 	}
 }
 
-func (conn *Conn) Write(ctx context.Context, m *V1Message) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case conn.toWrite <- m:
-		return nil
-	}
-}
-
-func (conn *Conn) runWriter() {
-	for m := range conn.toWrite {
-		if err := writeMessage(conn.l, conn.ws, m); err != nil {
-			log.Panic(err)
-		}
-	}
-}
-
-func (conn *Conn) runReader() {
-	for {
-		m, err := readMessage(conn.l, conn.ws)
+func (conn *Conn) Write(m *Message) error {
+	var err error
+	defer func() {
 		if err != nil {
-			log.Panic(err)
+			conn.stop(err)
+		}
+	}()
+
+	conn.writeM.Lock()
+	defer conn.writeM.Unlock()
+
+	conn.l.Debugf("Write: %+v", m)
+	err = errors.WithStack(writeMessage(conn.ctx, conn.ws, m))
+	return err
+}
+
+func (conn *Conn) runPinger() {
+	defer conn.wg.Done()
+
+	// TODO
+}
+
+// runReader reads WSRPC messages from WebSocket connection, sends responses to awaiting Invoke()-ers,
+// sends requests to Read()-ers.
+// When connection context is done, or on any other error, it closes connection and exits.
+func (conn *Conn) runReader() {
+	var err error
+	defer func() {
+		conn.stop(err)
+		close(conn.read)
+		conn.wg.Done()
+	}()
+
+	var m *Message
+	for {
+		m, err = readMessage(conn.ctx, conn.ws)
+		if err != nil {
+			return
+		}
+		conn.l.Debugf("runReader: %+v", m)
+
+		conn.readRW.RLock()
+		ch := conn.readStreams[m.StreamID] // is it response?
+		conn.readRW.RUnlock()
+		if ch == nil {
+			// no, it is request
+			ch = conn.read
 		}
 
-		conn.rw.RLock()
-		resCh := conn.readStreams[m.StreamID]
-		conn.rw.RUnlock()
-		if resCh != nil {
-			// response
-			resCh <- m
-		} else {
-			// request
-			conn.read <- m
+		select {
+		case ch <- m:
+			// nothing, continue loop
+		case <-conn.ctx.Done():
+			err = errors.WithStack(conn.ctx.Err())
+			return
 		}
 	}
 }

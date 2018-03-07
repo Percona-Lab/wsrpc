@@ -11,6 +11,7 @@ RPC-over-WebSocket prototype for PMM 2.0
 * Streaming
 * Metrics
 * WS pinger, ponger
+* TCP keep alives
 * Tweak constants
 * More tests
 * Fuzz testing

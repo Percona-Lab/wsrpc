@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
-	"log"
 	"path/filepath"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/protoc-gen-go/plugin"
+	"github.com/sirupsen/logrus"
 )
 
 func stripSuffix(arg string) string {
@@ -17,36 +17,44 @@ func stripSuffix(arg string) string {
 	return p[len(p)-1]
 }
 
-func Generate(req *plugin_go.CodeGeneratorRequest) *plugin_go.CodeGeneratorResponse {
-	var res plugin_go.CodeGeneratorResponse
+func Generate(req *plugin_go.CodeGeneratorRequest, version string) *plugin_go.CodeGeneratorResponse {
+	v := req.GetCompilerVersion()
+	protocVersion := fmt.Sprintf("%d.%d.%d", v.GetMajor(), v.GetMinor(), v.GetPatch())
+	if v.GetSuffix() != "" {
+		version += v.GetSuffix()
+	}
+	logrus.Debugf("protoc version %s, protoc-gen-wsrpc version %s", protocVersion, version)
 
+	var res plugin_go.CodeGeneratorResponse
 	for _, ftg := range req.FileToGenerate {
 		for _, pf := range req.ProtoFile {
 			if ftg != pf.GetName() {
 				continue
 			}
 
-			log.Printf("Name: %s", pf.GetName())
-			log.Printf("Package: %s", pf.GetPackage())
+			logrus.Debugf("Name: %s", pf.GetName())
+			logrus.Debugf("Package: %s", pf.GetPackage())
 			for _, m := range pf.GetMessageType() {
-				log.Printf("MessageType: %+v", m)
+				logrus.Debugf("MessageType: %+v", m)
 			}
 			for _, e := range pf.GetEnumType() {
-				log.Printf("Enum: %+v", e)
+				logrus.Debugf("Enum: %+v", e)
 			}
 			for _, s := range pf.GetService() {
-				log.Printf("Service: %+v", s)
+				logrus.Debugf("Service: %+v", s)
 			}
-			log.Printf("%+v", pf.GetExtension())
-			log.Printf("%+v", pf.GetOptions())
-			log.Printf("%+v", pf.GetSyntax())
+			logrus.Debugf("Extension: %+v", pf.GetExtension())
+			logrus.Debugf("Options: %+v", pf.GetOptions())
+			logrus.Debugf("Syntax: %+v", pf.GetSyntax())
 
 			for _, service := range pf.GetService() {
 				// render prolog
 				var content bytes.Buffer
 				err := prologTemplate.Execute(&content, &prologTemplateData{
-					SourceFile:  pf.GetName(),
-					PackageName: pf.GetPackage(),
+					SourceFile:    pf.GetName(),
+					ProtocVersion: protocVersion,
+					Version:       version,
+					PackageName:   pf.GetPackage(),
 				})
 				if err != nil {
 					res.Error = proto.String(err.Error())
@@ -60,6 +68,11 @@ func Generate(req *plugin_go.CodeGeneratorRequest) *plugin_go.CodeGeneratorRespo
 				}
 				data.ServiceNameUnexported = strings.ToLower(data.ServiceName[0:1]) + data.ServiceName[1:]
 				for _, m := range service.GetMethod() {
+					if m.GetClientStreaming() || m.GetServerStreaming() {
+						res.Error = proto.String(fmt.Sprintf("streaming is not supported yet: %s.%s.%s", data.PackageName, data.ServiceName, m.GetName()))
+						return &res
+					}
+
 					data.Methods = append(data.Methods, method{
 						Name:       m.GetName(),
 						InputType:  stripSuffix(m.GetInputType()),
