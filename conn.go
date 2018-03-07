@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,7 +15,8 @@ import (
 
 const (
 	wsHandshakeTimeout = 5 * time.Second
-	wsWriteTimeout     = 5 * time.Second
+	wsWriteTimeout     = time.Second
+	wsPingInterval     = 30 * time.Second
 	wsBufSize          = 4096
 	wsReadCap          = 0
 )
@@ -100,6 +102,7 @@ func makeConn(ws *websocket.Conn, readNextStreamID uint64, logConn string) *Conn
 	conn.wg.Add(2)
 	go conn.runPinger()
 	go conn.runReader()
+	conn.ws.SetPongHandler(conn.pongHandler)
 	return conn
 }
 
@@ -110,7 +113,8 @@ func (conn *Conn) Close() error {
 	return err
 }
 
-// close properly closes WebSocket connection with given error (which can be nil).
+// stop properly closes WebSocket connection with given error (which can be nil).
+// It also cancels connection context.
 func (conn *Conn) stop(err error) error {
 	conn.stopOnce.Do(func() {
 		conn.stopErr = err
@@ -145,6 +149,16 @@ func (conn *Conn) stop(err error) error {
 	})
 
 	return conn.stopErr
+}
+
+func (conn *Conn) pongHandler(data string) error {
+	nsec, err := strconv.ParseInt(data, 10, 64)
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse %q", data)
+	}
+	t := time.Unix(0, nsec)
+	conn.l.Infof("Latency %s", time.Since(t))
+	return nil
 }
 
 // Invoke method on the other side of connection and get response.
@@ -208,15 +222,38 @@ func (conn *Conn) Write(m *Message) error {
 	return err
 }
 
+// runPinger writes WebSocket ping messages periodically.
+// When connection context is done, or on any other error, it stops connection and exits.
 func (conn *Conn) runPinger() {
-	defer conn.wg.Done()
+	var err error
+	defer func() {
+		conn.stop(err)
+		conn.wg.Done()
+	}()
 
-	// TODO
+	ticker := time.NewTicker(wsPingInterval)
+	defer ticker.Stop()
+
+	var t time.Time
+	for {
+		select {
+		case <-conn.ctx.Done():
+			err = errors.WithStack(conn.ctx.Err())
+			return
+
+		case t = <-ticker.C:
+			data := []byte(strconv.FormatInt(t.UnixNano(), 10))
+			if err = conn.ws.WriteControl(websocket.PingMessage, data, time.Now().Add(wsWriteTimeout)); err != nil {
+				err = errors.WithStack(err)
+				return
+			}
+		}
+	}
 }
 
 // runReader reads WSRPC messages from WebSocket connection, sends responses to awaiting Invoke()-ers,
 // sends requests to Read()-ers.
-// When connection context is done, or on any other error, it closes connection and exits.
+// When connection context is done, or on any other error, it stops connection and exits.
 func (conn *Conn) runReader() {
 	var err error
 	defer func() {
