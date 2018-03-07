@@ -68,7 +68,7 @@ func Dial(addr string, headers http.Header) (*Conn, error) {
 	ws, resp, err := d.Dial(addr, headers)
 	if err != nil {
 		b, _ := httputil.DumpResponse(resp, true)
-		logrus.Debugf("Failed to connect to %s:\n%s", addr, b)
+		logrus.WithField("component", "wsrpc").Debugf("Failed to connect to %s:\n%s", addr, b)
 		return nil, errors.Wrapf(err, "failed to connect to %s", addr)
 	}
 	return makeConn(ws, 1, "client->server"), nil
@@ -95,7 +95,7 @@ func makeConn(ws *websocket.Conn, readNextStreamID uint64, logConn string) *Conn
 	}
 	conn := &Conn{
 		ws:               ws,
-		l:                logrus.WithField("conn", logConn),
+		l:                logrus.WithField("component", "wsrpc").WithField("conn", logConn),
 		ctx:              ctx,
 		cancel:           cancel,
 		read:             make(chan *Message, wsReadCap),
