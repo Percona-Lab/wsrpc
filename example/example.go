@@ -4,6 +4,11 @@ import (
 	"github.com/Percona-Lab/wsrpc/example/api"
 )
 
+const (
+	authTokenHeader = "AuthToken"
+	authToken       = "some-secret-auth-token"
+)
+
 type EchoServer struct{}
 
 func (server *EchoServer) Echo(req *api.EchoRequest) (*api.EchoResponse, error) {

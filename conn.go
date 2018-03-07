@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 	"sync"
 	"time"
@@ -58,14 +59,16 @@ type Conn struct {
 }
 
 // Dial establishes connection by connecting to HTTP server.
-func Dial(addr string) (*Conn, error) {
+func Dial(addr string, headers http.Header) (*Conn, error) {
 	d := &websocket.Dialer{
 		HandshakeTimeout: wsHandshakeTimeout,
 		ReadBufferSize:   wsBufSize,
 		WriteBufferSize:  wsBufSize,
 	}
-	ws, _, err := d.Dial(addr, nil)
+	ws, resp, err := d.Dial(addr, headers)
 	if err != nil {
+		b, _ := httputil.DumpResponse(resp, true)
+		logrus.Debugf("Failed to connect to %s:\n%s", addr, b)
 		return nil, errors.Wrapf(err, "failed to connect to %s", addr)
 	}
 	return makeConn(ws, 1, "client->server"), nil

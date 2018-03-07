@@ -24,6 +24,12 @@ func RunTestServer(ctx context.Context, t *testing.T, wg *sync.WaitGroup) *httpt
 		wg.Add(1)
 		defer wg.Done()
 
+		if req.Header.Get(authTokenHeader) != authToken {
+			t.Error("invalid auth token")
+			http.Error(rw, "invalid auth token", 403)
+			return
+		}
+
 		conn, err := wsrpc.Upgrade(rw, req)
 		if err != nil {
 			t.Error(err)
@@ -74,7 +80,7 @@ func TestEchoServer(t *testing.T) {
 	addr := testServer.Listener.Addr().String()
 	logrus.Printf("Server started on %s", addr)
 
-	conn, err := wsrpc.Dial("ws://" + addr)
+	conn, err := wsrpc.Dial("ws://"+addr, http.Header{authTokenHeader: []string{authToken}})
 	if err != nil {
 		t.Fatal(err)
 	}
