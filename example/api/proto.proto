@@ -10,8 +10,12 @@ message EchoResponse {
     string data = 1;
 }
 
+message EmptyRequest {}
+message EmptyResponse {}
+
 service EchoService {
     rpc Echo (EchoRequest) returns (EchoResponse);
+    rpc Empty (EmptyRequest) returns (EmptyResponse);
 }
 
 message PowRequest {

@@ -8,6 +8,7 @@ RPC-over-WebSocket prototype for PMM 2.0
 * Handle double registration of the same service / duplicate method names
 * Handle errors from RPC methods
 * Proper connection closing
+* Authentication (expose HTTP headers?)
 * Streaming
 * Metrics
 * WS pinger, ponger

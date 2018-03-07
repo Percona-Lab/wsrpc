@@ -13,5 +13,9 @@ func (server *EchoServer) Echo(req *api.EchoRequest) (*api.EchoResponse, error) 
 	return res, nil
 }
 
+func (server *EchoServer) Empty(req *api.EmptyRequest) (*api.EmptyResponse, error) {
+	return new(api.EmptyResponse), nil
+}
+
 // check interfaces
 var _ api.EchoServiceServer = (*EchoServer)(nil)

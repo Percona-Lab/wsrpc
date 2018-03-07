@@ -15,6 +15,7 @@ import (
 
 type EchoServiceClient interface {
 	Echo(*EchoRequest) (*EchoResponse, error)
+	Empty(*EmptyRequest) (*EmptyResponse, error)
 }
 
 type echoServiceClient struct {
@@ -40,6 +41,21 @@ func (c *echoServiceClient) Echo(req *EchoRequest) (*EchoResponse, error) {
 	return res, nil
 }
 
+func (c *echoServiceClient) Empty(req *EmptyRequest) (*EmptyResponse, error) {
+	b, err := proto.Marshal(req)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", req)
+	}
+	if b, err = c.conn.Invoke("Empty", b); err != nil {
+		return nil, err
+	}
+	res := new(EmptyResponse)
+	if err = proto.Unmarshal(b, res); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal protobuf message to %T", res)
+	}
+	return res, nil
+}
+
 // check interface
 var _ EchoServiceClient = (*echoServiceClient)(nil)
 
@@ -47,6 +63,7 @@ var _ EchoServiceClient = (*echoServiceClient)(nil)
 
 type EchoServiceServer interface {
 	Echo(*EchoRequest) (*EchoResponse, error)
+	Empty(*EmptyRequest) (*EmptyResponse, error)
 }
 
 type EchoServiceDispatcher struct {
@@ -74,11 +91,31 @@ func dispatchEcho(server interface{}, arg []byte) ([]byte, error) {
 	return b, nil
 }
 
+func dispatchEmpty(server interface{}, arg []byte) ([]byte, error) {
+	req := new(EmptyRequest)
+	if err := proto.Unmarshal(arg, req); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal protobuf message to %T", req)
+	}
+	res, err := server.(EchoServiceServer).Empty(req)
+	if err != nil {
+		return nil, err
+	}
+	b, err := proto.Marshal(res)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", res)
+	}
+	return b, nil
+}
+
 var echoServiceDescription = &wsrpc.ServiceDesc{
 	Methods: []wsrpc.ServiceMethod{
 		{
 			Name:   "Echo",
 			Method: dispatchEcho,
+		},
+		{
+			Name:   "Empty",
+			Method: dispatchEmpty,
 		},
 	},
 }

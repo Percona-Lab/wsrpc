@@ -46,10 +46,8 @@ import (
 // Client API for {{ .PackageName }}.{{ .ServiceName }} service
 
 type {{ .ServiceName }}Client interface {
-	{{ range .Methods }}
-
-	{{ .Name }}(*{{ .InputType }}) (*{{ .OutputType }}, error)
-
+	{{ range .Methods -}}
+		{{ .Name }}(*{{ .InputType }}) (*{{ .OutputType }}, error)
 	{{ end }}
 }
 
@@ -88,10 +86,8 @@ var _ {{ .ServiceName }}Client = (*{{ $.ServiceNameUnexported }}Client)(nil)
 // Server API for {{ .PackageName }}.{{ .ServiceName }} service
 
 type {{ .ServiceName }}Server interface {
-	{{ range .Methods }}
-
-	{{ .Name }}(*{{ .InputType }}) (*{{ .OutputType }}, error)
-
+	{{ range .Methods -}}
+		{{ .Name }}(*{{ .InputType }}) (*{{ .OutputType }}, error)
 	{{ end }}
 }
 
@@ -131,8 +127,8 @@ var {{ .ServiceNameUnexported }}Description = &wsrpc.ServiceDesc{
 			Name:   "{{ .Name }}",
 			Method: dispatch{{ .Name }},
 		},
-	},
 {{ end }}
+	},
 }
 
 func (d *{{ .ServiceName }}Dispatcher) Run() (exitErr error) {

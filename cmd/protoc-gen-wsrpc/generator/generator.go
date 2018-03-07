@@ -12,6 +12,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const runFormat = true
+
 func stripSuffix(arg string) string {
 	p := strings.Split(arg, ".")
 	return p[len(p)-1]
@@ -97,9 +99,11 @@ func Generate(req *plugin_go.CodeGeneratorRequest, version string) *plugin_go.Co
 					Name: proto.String(fileName),
 				}
 				b := content.Bytes()
-				if b, err = format.Source(b); err != nil {
-					res.Error = proto.String(fmt.Sprintf("failed to format source code: %s", err))
-					return &res
+				if runFormat {
+					if b, err = format.Source(b); err != nil {
+						res.Error = proto.String(fmt.Sprintf("failed to format source code: %s", err))
+						return &res
+					}
 				}
 				resFile.Content = proto.String(string(b))
 
