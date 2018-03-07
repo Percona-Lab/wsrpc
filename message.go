@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -26,6 +27,10 @@ type Message struct {
 	StreamID uint64
 	Path     string
 	Arg      []byte
+}
+
+func (m Message) String() string {
+	return fmt.Sprintf("{%d %s %d bytes}", m.StreamID, m.Path, len(m.Arg))
 }
 
 type v1MessageHeader struct {
@@ -115,3 +120,9 @@ func writeMessage(ctx context.Context, ws *websocket.Conn, m *Message) error {
 	}
 	return nil
 }
+
+// check interfaces
+var (
+	_ fmt.Stringer = Message{}
+	_ fmt.Stringer = &Message{}
+)
