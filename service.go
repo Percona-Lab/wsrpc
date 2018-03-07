@@ -1,7 +1,7 @@
 package wsrpc
 
 type ServiceMethod struct {
-	Name   string
+	Path   string
 	Method func(interface{}, []byte) ([]byte, error)
 }
 

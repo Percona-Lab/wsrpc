@@ -30,7 +30,7 @@ func (c *powServiceClient) Pow(req *PowRequest) (*PowResponse, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", req)
 	}
-	if b, err = c.conn.Invoke("Pow", b); err != nil {
+	if b, err = c.conn.Invoke("/api.PowService/Pow", b); err != nil {
 		return nil, err
 	}
 	res := new(PowResponse)
@@ -77,7 +77,7 @@ func dispatchPow(server interface{}, arg []byte) ([]byte, error) {
 var powServiceDescription = &wsrpc.ServiceDesc{
 	Methods: []wsrpc.ServiceMethod{
 		{
-			Name:   "Pow",
+			Path:   "/api.PowService/Pow",
 			Method: dispatchPow,
 		},
 	},
@@ -93,13 +93,13 @@ func (d *PowServiceDispatcher) Run() (exitErr error) {
 
 		var found bool
 		for _, method := range powServiceDescription.Methods {
-			if method.Name != message.Path {
+			if method.Path != message.Path {
 				continue
 			}
 
 			res, err := method.Method(d.server, message.Arg)
 			if err != nil {
-				exitErr = errors.Wrapf(err, "%s returned error", method.Name)
+				exitErr = errors.Wrapf(err, "%s returned error", method.Path)
 				return
 			}
 

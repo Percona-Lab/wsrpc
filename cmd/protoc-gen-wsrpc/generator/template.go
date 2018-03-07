@@ -14,6 +14,7 @@ type (
 
 	method struct {
 		Name       string
+		Path       string
 		InputType  string
 		OutputType string
 	}
@@ -66,7 +67,7 @@ func (c *{{ $.ServiceNameUnexported }}Client) {{ .Name }}(req *{{ .InputType }})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", req)
 	}
-	if b, err = c.conn.Invoke("{{ .Name }}", b); err != nil {
+	if b, err = c.conn.Invoke("{{ .Path }}", b); err != nil {
 		return nil, err
 	}
 	res := new({{ .OutputType }})
@@ -124,7 +125,7 @@ var {{ .ServiceNameUnexported }}Description = &wsrpc.ServiceDesc{
 	Methods: []wsrpc.ServiceMethod{
 {{ range .Methods -}}
 		{
-			Name:   "{{ .Name }}",
+			Path:   "{{ .Path }}",
 			Method: dispatch{{ .Name }},
 		},
 {{ end }}
@@ -141,13 +142,13 @@ func (d *{{ .ServiceName }}Dispatcher) Run() (exitErr error) {
 
 		var found bool
 		for _, method := range {{ .ServiceNameUnexported }}Description.Methods {
-			if method.Name != message.Path {
+			if method.Path != message.Path {
 				continue
 			}
 
 			res, err := method.Method(d.server, message.Arg)
 			if err != nil {
-				exitErr = errors.Wrapf(err, "%s returned error", method.Name)
+				exitErr = errors.Wrapf(err, "%s returned error", method.Path)
 				return
 			}
 

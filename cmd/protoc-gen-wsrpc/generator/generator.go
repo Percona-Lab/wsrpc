@@ -77,6 +77,7 @@ func Generate(req *plugin_go.CodeGeneratorRequest, version string) *plugin_go.Co
 
 					data.Methods = append(data.Methods, method{
 						Name:       m.GetName(),
+						Path:       fmt.Sprintf("/%s.%s/%s", data.PackageName, data.ServiceName, m.GetName()),
 						InputType:  stripSuffix(m.GetInputType()),
 						OutputType: stripSuffix(m.GetOutputType()),
 					})

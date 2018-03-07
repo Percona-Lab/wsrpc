@@ -31,7 +31,7 @@ func (c *echoServiceClient) Echo(req *EchoRequest) (*EchoResponse, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", req)
 	}
-	if b, err = c.conn.Invoke("Echo", b); err != nil {
+	if b, err = c.conn.Invoke("/api.EchoService/Echo", b); err != nil {
 		return nil, err
 	}
 	res := new(EchoResponse)
@@ -46,7 +46,7 @@ func (c *echoServiceClient) Empty(req *EmptyRequest) (*EmptyResponse, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to marshal protobuf message %T", req)
 	}
-	if b, err = c.conn.Invoke("Empty", b); err != nil {
+	if b, err = c.conn.Invoke("/api.EchoService/Empty", b); err != nil {
 		return nil, err
 	}
 	res := new(EmptyResponse)
@@ -110,11 +110,11 @@ func dispatchEmpty(server interface{}, arg []byte) ([]byte, error) {
 var echoServiceDescription = &wsrpc.ServiceDesc{
 	Methods: []wsrpc.ServiceMethod{
 		{
-			Name:   "Echo",
+			Path:   "/api.EchoService/Echo",
 			Method: dispatchEcho,
 		},
 		{
-			Name:   "Empty",
+			Path:   "/api.EchoService/Empty",
 			Method: dispatchEmpty,
 		},
 	},
@@ -130,13 +130,13 @@ func (d *EchoServiceDispatcher) Run() (exitErr error) {
 
 		var found bool
 		for _, method := range echoServiceDescription.Methods {
-			if method.Name != message.Path {
+			if method.Path != message.Path {
 				continue
 			}
 
 			res, err := method.Method(d.server, message.Arg)
 			if err != nil {
-				exitErr = errors.Wrapf(err, "%s returned error", method.Name)
+				exitErr = errors.Wrapf(err, "%s returned error", method.Path)
 				return
 			}
 
