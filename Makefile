@@ -1,4 +1,4 @@
-all: gen test-race
+all: gen install test-race
 
 # installs tools to $GOBIN (or $GOPATH/bin) which is expected to be in $PATH
 init:
