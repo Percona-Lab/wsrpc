@@ -67,9 +67,13 @@ func Dial(addr string, headers http.Header) (*Conn, http.Header, error) {
 	}
 	ws, resp, err := d.Dial(addr, headers)
 	if err != nil {
-		b, _ := httputil.DumpResponse(resp, true)
-		logrus.WithField("component", "wsrpc").Debugf("Failed to connect to %s:\n%s", addr, b)
-		return nil, resp.Header, errors.Wrapf(err, "failed to connect to %s", addr)
+		var respHeaders http.Header
+		if resp != nil {
+			respHeaders = resp.Header
+			b, _ := httputil.DumpResponse(resp, true)
+			logrus.WithField("component", "wsrpc").Debugf("Failed to connect to %s:\n%s", addr, b)
+		}
+		return nil, respHeaders, errors.Wrapf(err, "failed to connect to %s", addr)
 	}
 	return makeConn(ws, 1, "client->server"), resp.Header, nil
 }

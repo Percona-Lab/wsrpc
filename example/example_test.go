@@ -108,6 +108,13 @@ func TestEchoServer(t *testing.T) {
 	}
 }
 
+func TestNoServer(t *testing.T) {
+	_, _, err := wsrpc.Dial("ws://127.0.0.1:1/", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestMain(m *testing.M) {
 	before := runtime.NumGoroutine()
 
