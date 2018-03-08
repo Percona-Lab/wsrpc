@@ -1,9 +1,9 @@
 # Changelog
 
-## v0.2.0 (not released yet)
+## v0.2.0 (2018-03-078)
 
-* Allow to pass HTTP headers to Dial.
-* Added WebSocket pings/pongs.
+* Allow to send and receive custom HTTP headers (mainly for authentication and authorization).
+* Added WebSocket pings/pongs to keep idle connection alive.
 
 ## v0.1.0 (2018-03-07)
 

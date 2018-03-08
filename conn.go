@@ -59,7 +59,7 @@ type Conn struct {
 }
 
 // Dial establishes connection by connecting to HTTP server.
-func Dial(addr string, headers http.Header) (*Conn, error) {
+func Dial(addr string, headers http.Header) (*Conn, http.Header, error) {
 	d := &websocket.Dialer{
 		HandshakeTimeout: wsHandshakeTimeout,
 		ReadBufferSize:   wsBufSize,
@@ -69,19 +69,19 @@ func Dial(addr string, headers http.Header) (*Conn, error) {
 	if err != nil {
 		b, _ := httputil.DumpResponse(resp, true)
 		logrus.WithField("component", "wsrpc").Debugf("Failed to connect to %s:\n%s", addr, b)
-		return nil, errors.Wrapf(err, "failed to connect to %s", addr)
+		return nil, resp.Header, errors.Wrapf(err, "failed to connect to %s", addr)
 	}
-	return makeConn(ws, 1, "client->server"), nil
+	return makeConn(ws, 1, "client->server"), resp.Header, nil
 }
 
 // Upgrade establishes connection by upgrading incoming HTTP request from the client.
-func Upgrade(rw http.ResponseWriter, req *http.Request) (*Conn, error) {
+func Upgrade(rw http.ResponseWriter, req *http.Request, respHeaders http.Header) (*Conn, error) {
 	upgrader := &websocket.Upgrader{
 		HandshakeTimeout: wsHandshakeTimeout,
 		ReadBufferSize:   wsBufSize,
 		WriteBufferSize:  wsBufSize,
 	}
-	ws, err := upgrader.Upgrade(rw, req, nil)
+	ws, err := upgrader.Upgrade(rw, req, respHeaders)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to upgrade connection from %s", req.RemoteAddr)
 	}
